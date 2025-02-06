@@ -74,6 +74,9 @@ onboarding
 offboarding
 emp
 employee-exp
+wisSeatBooking
+seat
+Seat
 exp
 prod
 WVAPT
