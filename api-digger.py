@@ -43,8 +43,9 @@ def print_banner():
 ║ {Fore.GREEN} / ___ \\|  __/ | |_____]{Fore.YELLOW}| |_| || | |__| |_| | |___|  _ < {Fore.CYAN}     ║
 ║ {Fore.GREEN}/_/   \\_\\_|   |___|     {Fore.YELLOW}|____/|___\\____\\____|_____|_| \\_\\{Fore.CYAN}     ║
 ║                                                               ║
-║ {Fore.WHITE}API-Digger: Swagger UI Vulnerability Scanner v2.1{Fore.CYAN}             ║
+║ {Fore.WHITE}API-Digger: Swagger UI Vulnerability Scanner v2  {Fore.CYAN}             ║
 ║ {Fore.WHITE}Discover and analyze vulnerable Swagger UI endpoints{Fore.CYAN}          ║
+║                                                     {Fore.MAGENTA}By: 0xs0m {Fore.CYAN}║
 ╚═══════════════════════════════════════════════════════════════╝
     """
     print(banner)
