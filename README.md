@@ -1,10 +1,11 @@
-# API-Digger
+# API-Digger v2
 
-![API-Digger Logo](https://img.shields.io/badge/API--Digger-v2.1-blue)
+![API-Digger Logo](https://img.shields.io/badge/API--Digger-v2-blue)
 ![Python](https://img.shields.io/badge/Python-3.7+-brightgreen)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 API-Digger is an automated Swagger UI vulnerability scanner that identifies exposed and potentially vulnerable API documentation endpoints.
+![image](https://github.com/user-attachments/assets/5bb01a62-2bcc-470f-b6e1-8e1d3aab040a)
 
 ## 🚀 Features
 
