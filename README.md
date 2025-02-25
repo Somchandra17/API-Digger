@@ -90,12 +90,6 @@ The tool generates a detailed report containing:
 - Details of vulnerable endpoints with version information
 - List of endpoints that encountered errors during scanning
 
-## 💡 Tips
-
-- For optimal performance, adjust thread count based on your system capabilities
-- Use a comprehensive subdomain list for better coverage
-- Consider using custom wordlists for specialized environments
-
 ## 📜 License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
