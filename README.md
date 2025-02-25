@@ -1,68 +1,104 @@
 # API-Digger
 
-This tool is designed to automate the process of discovering public APIs across multiple subdomains. It uses Feroxbuster for initial directory enumeration and FFUF for targeted API endpoint discovery.
+![API-Digger Logo](https://img.shields.io/badge/API--Digger-v2.1-blue)
+![Python](https://img.shields.io/badge/Python-3.7+-brightgreen)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-## Features
+API-Digger is an automated Swagger UI vulnerability scanner that identifies exposed and potentially vulnerable API documentation endpoints.
 
-- Multi-threaded Feroxbuster scanning for efficient subdomain processing
-- FFUF scanning to identify potential API endpoints
-- Progress bars to track the status of both Feroxbuster and FFUF scans
-- Output results saved to a file for easy review
+## 🚀 Features
 
-## Prerequisites
+- **Endpoint Discovery**: Automatically scans subdomains to identify potential Swagger UI endpoints
+- **Version Detection**: Uses headless browser automation to detect Swagger UI versions
+- **Vulnerability Assessment**: Identifies known vulnerabilities in detected Swagger UI versions
+- **Detailed Reporting**: Generates comprehensive reports of vulnerable endpoints
+- **Concurrent Processing**: Multi-threaded architecture for faster scanning
 
-- Python 3.x
-- [Feroxbuster](https://github.com/epi052/feroxbuster)
-- [FFUF](https://github.com/ffuf/ffuf)
-- tqdm (Python library for progress bars)
-- [Seclist](https://github.com/danielmiessler/SecLists)
-- Update the path of Seclist in the code
+## 📋 Prerequisites
 
-## Installation
+- Python 3.7+
+- Feroxbuster (for directory enumeration)
+- Chrome/Chromium (for headless browser automation)
 
-1. Clone this repository:
-   ```
-   git clone https://github.com/Somchandra17/API-Digger.git
-   cd API-Digger
-   ```
+## 🔧 Installation
 
-2. Install the required Python library:
-   ```
-   pip install tqdm
-   ```
+1. Clone the repository
+```bash
+git clone https://github.com/Somchandra17/API-Digger.git
+cd API-Digger
+```
 
-3. Ensure Feroxbuster and FFUF are installed and accessible in your system PATH.
+2. Install required Python packages
+```bash
+pip install -r requirements.txt
+```
 
-## Usage
+3. Install Feroxbuster (if not already installed)
+```bash
+# On systems with cargo (Rust package manager)
+cargo install feroxbuster
 
-1. Prepare a file containing a list of subdomains, one per line.
+# On Debian/Ubuntu
+apt-get install feroxbuster
 
-2. Run the script:
-   ```
-   python api_discovery.py
-   ```
+# On macOS with Homebrew 🏳️‍🌈
+brew install feroxbuster
+```
 
-3. When prompted, enter the path to your subdomains file.
+## 🔍 Usage
 
-4. The script will process the subdomains and save the results in `public_api.txt`.
+```bash
+python3 api-digger.py
+```
 
-## How it works
+The script will prompt you for:
+- Path to a file containing subdomains to scan
+- Custom wordlist option (default: uses raft-medium-directories.txt from SecLists)
+- Number of concurrent threads (default: 20)
+- Output file name for the scan results
 
-1. The script reads the list of subdomains from the provided file.
-2. It runs Feroxbuster on each subdomain using multi-threading for improved performance.
-3. The Feroxbuster results are then processed using FFUF to identify potential API endpoints.
-4. Results are saved to `public_api.txt`.
+### Example Session
 
-## Configuration
+```
+[?] Enter the name of the subdomains file: subdomains.txt
+[?] Do you want to use a custom wordlist for directory enumeration? (y/n): n
+[*] Using default wordlist: https://raw.githubusercontent.com/danielmiessler/SecLists/refs/heads/master/Discovery/Web-Content/raft-medium-directories.txt
+[?] Enter maximum number of concurrent threads (default: 20): 
+[?] Enter the output file name: scan_results.txt
+```
 
-- Feroxbuster uses the RAFT medium directories wordlist from SecLists.
-- FFUF uses the Swagger wordlist from SecLists.
-- You can modify the wordlists and other parameters in the script as needed.
+## 📊 Vulnerability Table
 
-## Note
+API-Digger checks for the following known Swagger UI vulnerabilities:
 
-This tool is intended for authorized security testing only. Always ensure you have permission to scan the target subdomains.
+| Severity | Vulnerability | Vulnerable Versions |
+|----------|---------------|---------------------|
+| Medium   | Server-side Request Forgery (SSRF) | <4.1.3 |
+| Medium   | Insecure Defaults | <3.26.1 |
+| Medium   | Relative Path Overwrite (RPO) | <3.23.11 |
+| Medium   | Cross-site Scripting (XSS) | >=2.0.3 <2.0.24, >=3.0.0 <3.0.13, <2.2.1, <3.20.9, <3.4.2, <2.2.3 |
+| Medium   | Reverse Tabnabbing | <3.18.0 |
+| Critical | Cross-site Scripting (XSS) | <2.1.0 |
+| High     | Cross-site Scripting (XSS) | <2.2.1 |
 
-## License
+## 📝 Output
 
-[MIT](https://choosealicense.com/licenses/mit/)
+The tool generates a detailed report containing:
+- Scan summary with statistics
+- List of all potential Swagger UI endpoints
+- Details of vulnerable endpoints with version information
+- List of endpoints that encountered errors during scanning
+
+## 💡 Tips
+
+- For optimal performance, adjust thread count based on your system capabilities
+- Use a comprehensive subdomain list for better coverage
+- Consider using custom wordlists for specialized environments
+
+## 📜 License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## ⚠️ Disclaimer
+
+This tool is designed for security professionals to identify vulnerable Swagger UI instances in their own environments. Always obtain proper authorization before scanning any systems you don't own.
