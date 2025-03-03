@@ -1,5 +1,6 @@
 import os
 import subprocess
+import gc
 import threading
 from queue import Queue
 import re
@@ -31,8 +32,9 @@ VULNERABILITY_TABLE = [
 ]
 
 # threads dont go above 25
-MAX_THREADS = 20
+MAX_THREADS = 15  # Reduced from 20 to prevent resource exhaustion
 PROCESS_DELAY = 0.05
+MAX_BATCH_SIZE = 100  # Maximum number of subdomains to process in a batch
 
 def print_banner():
     banner = f"""
@@ -43,7 +45,7 @@ def print_banner():
 ║ {Fore.GREEN} / ___ \\|  __/ | |_____]{Fore.YELLOW}| |_| || | |__| |_| | |___|  _ < {Fore.CYAN}     ║
 ║ {Fore.GREEN}/_/   \\_\\_|   |___|     {Fore.YELLOW}|____/|___\\____\\____|_____|_| \\_\\{Fore.CYAN}     ║
 ║                                                               ║
-║ {Fore.WHITE}API-Digger: Swagger UI Vulnerability Scanner v2  {Fore.CYAN}             ║
+║ {Fore.WHITE}API-Digger: Swagger UI Vulnerability Scanner v3  {Fore.CYAN}             ║
 ║ {Fore.WHITE}Discover and analyze vulnerable Swagger UI endpoints{Fore.CYAN}          ║
 ║                                                     {Fore.MAGENTA}By: 0xs0m {Fore.CYAN}║
 ╚═══════════════════════════════════════════════════════════════╝
@@ -57,13 +59,31 @@ def increase_file_limit():
     """
     try:
         soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
-        # Set the soft limit to the hard limit or 4096, whichever is lower
-        new_soft = min(hard, 4096)
+        # Try to set a much higher limit for handling many subdomains
+        new_soft = min(hard, 8192)  # Increased from 4096 to 8192
         resource.setrlimit(resource.RLIMIT_NOFILE, (new_soft, hard))
         print(f"{Fore.CYAN}[*] File limit increased from {soft} to {new_soft}")
+        
+        # Check if the limit might still be too low based on the OS limits
+        if new_soft < 4096:
+            print(f"{Fore.YELLOW}[!] Warning: File limit might be too low for large subdomain lists")
+            print(f"{Fore.YELLOW}[!] Consider running 'ulimit -n 8192' before starting this script")
     except (ValueError, resource.error) as e:
         print(f"{Fore.YELLOW}[!] Could not increase file limit: {e}")
-        print(f"{Fore.YELLOW}[!] If you encounter 'Too many open files' errors, try running 'ulimit -n 4096' before starting the script")
+        print(f"{Fore.YELLOW}[!] For processing large subdomain lists, run 'ulimit -n 8192' before starting the script")
+        
+        # Check current ulimit value and provide specific guidance
+        try:
+            current_limit = int(subprocess.check_output("ulimit -n", shell=True).decode().strip())
+            if current_limit < 4096:
+                print(f"{Fore.RED}[!] Current ulimit is only {current_limit}. This is too low for large subdomain lists!")
+                if platform.system() == "Linux" or platform.system() == "Darwin":  # Linux or macOS
+                    print(f"{Fore.YELLOW}[!] Run these commands to increase limits temporarily:")
+                    print(f"{Fore.WHITE}    ulimit -n 8192")
+                    print(f"{Fore.YELLOW}[!] Or add this to your ~/.bashrc or ~/.zshrc for persistence:")
+                    print(f"{Fore.WHITE}    ulimit -n 8192")
+        except:
+            pass
 
 def check_prerequisites():
     """Check if required tools are installed"""
@@ -78,7 +98,7 @@ def check_prerequisites():
         except subprocess.CalledProcessError:
             missing_tools.append(message)
     
-    if missing_tools:
+    if (missing_tools):
         print(f"{Fore.RED}[!] Missing prerequisites:")
         for message in missing_tools:
             print(f"{Fore.RED}    - {message}")
@@ -97,6 +117,14 @@ def is_version_vulnerable(version, version_constraints):
         bool: True if vulnerable, False otherwise
     """
     if not version:
+        return False
+    
+    # Handle the case where version is just "2.x"
+    if version == "2.x":
+        # Check if any of the version constraints affect 2.x versions
+        for constraint in version_constraints:
+            if "<2" in constraint or "2." in constraint:
+                return True
         return False
     
     # tuple conv.
@@ -273,6 +301,7 @@ def check_swagger_version(url):
     Returns:
         tuple: (version, vulnerabilities, error_message)
     """
+    driver = None
     try:
         # selenium headless
         options = webdriver.ChromeOptions()
@@ -286,19 +315,61 @@ def check_swagger_version(url):
         
         driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
         
-        # Set a timeout for page load
-        driver.set_page_load_timeout(10)
+        driver.set_page_load_timeout(2)
         
         driver.get(url)
         
         # Wait for the page to load
         time.sleep(2)
         
-        # methods to get the swagger ui version inc. version 2 
+        # Enhanced version detection methods including Swagger UI 2.x detection
         version_methods = [
             'return window.versions ? JSON.stringify(window.versions) : null;',
             'return document.querySelector(".version") ? document.querySelector(".version").innerText : null;',
-            'return document.querySelector("footer") ? document.querySelector("footer").innerText : null;'
+            'return document.querySelector("footer") ? document.querySelector("footer").innerText : null;',
+            # Method for detecting Swagger UI 2.x
+            '''
+            (function() {
+              try {
+                // Method 1: Check for Swagger 2.x specific DOM elements
+                const swaggerSection = document.querySelector('.swagger-section');
+                const swagger2Container = document.querySelector('#swagger-ui-container');
+                
+                if (swagger2Container || swaggerSection) {
+                  return JSON.stringify({
+                    method: "dom-detection",
+                    version: "2.x",
+                    major: "2.x"
+                  });
+                }
+                
+                // Method 2: Check for 2.x specific global object without SwaggerUIBundle
+                if (window.SwaggerUI && !window.SwaggerUIBundle) {
+                  return JSON.stringify({
+                    method: "swagger-ui-global",
+                    version: "2.x",
+                    major: "2.x"
+                  });
+                }
+                
+                // Method 3: Check script sources for version 2 indicators
+                const scripts = document.querySelectorAll('script[src]');
+                for (let i = 0; i < scripts.length; i++) {
+                  const src = scripts[i].getAttribute('src');
+                  if (src && (src.includes('swagger-ui-2') || src.includes('swagger-ui@2'))) {
+                    return JSON.stringify({
+                      method: "script-src-detection",
+                      version: "2.x",
+                      major: "2.x"
+                    });
+                  }
+                }
+                return null;
+              } catch (e) {
+                return JSON.stringify({error: e.toString()});
+              }
+            })()
+            '''
         ]
         
         version = None
@@ -307,13 +378,30 @@ def check_swagger_version(url):
         for script in version_methods:
             try:
                 result = driver.execute_script(script)
+                
+                # Skip null/undefined results
+                if not result:
+                    continue
+                
                 execution_results.append(result)
-                if result:
-                    # Look for version pattern in the result
-                    version_match = re.search(r'(\d+\.\d+\.\d+)', result)
-                    if version_match:
-                        version = version_match.group(1)
-                        break
+                
+                # For the Swagger UI 2.x detection (JSON object response)
+                if isinstance(result, str) and result.startswith('{'):
+                    try:
+                        json_result = json.loads(result)
+                        if 'version' in json_result:
+                            version = json_result['version']
+                            print(f"{Fore.GREEN}[+] Detected Swagger UI version {version} via {json_result.get('method', 'JSON detection')} method")
+                            break
+                    except json.JSONDecodeError:
+                        pass
+                
+                # Regular version pattern detection - using the simpler approach from api-digger.py
+                version_match = re.search(r'(\d+\.\d+\.\d+)', result)
+                if version_match:
+                    version = version_match.group(1)
+                    print(f"{Fore.GREEN}[+] Detected Swagger UI version {version} via script execution")
+                    break
             except Exception as e:
                 execution_results.append(f"Error: {str(e)}")
                 continue
@@ -323,12 +411,48 @@ def check_swagger_version(url):
             vulnerabilities = get_identified_vulnerabilities(version)
             return version, vulnerabilities, None
         
-        # No version found but page loaded - this is an error case - False Positibe Check
-        error_message = "Version detection failed. All methods returned null or undefined."
+        # No version found but page loaded - check if it's a 404 or other error
+        try:
+            # Check if the page title contains '404' or 'error'
+            title = driver.title.lower()
+            if '404' in title or 'error' in title or 'not found' in title:
+                return None, [], f"Page error: {title}"
+        except:
+            pass
         
+        # Last resort detection for Swagger UI - using approach from api-digger.py
+        try:
+            # Check for common Swagger UI elements and patterns
+            has_swagger_ui = driver.execute_script('''
+                return Boolean(
+                    document.querySelector('.swagger-section') || 
+                    document.querySelector('#swagger-ui-container') ||
+                    document.querySelector('.swagger-ui') ||
+                    window.SwaggerUI ||
+                    document.querySelector('script[src*="swagger-ui"]') ||
+                    document.body.innerText.includes('Swagger UI') ||
+                    document.body.innerText.includes('swagger-ui')
+                );
+            ''')
+            
+            if has_swagger_ui:
+                # If it looks like Swagger UI but we couldn't detect version,
+                # default to 2.x since it's common and detection is more difficult
+                version = "2.x"
+                print(f"{Fore.YELLOW}[!] Detected likely Swagger UI 2.x but couldn't determine exact version")
+                vulnerabilities = get_identified_vulnerabilities(version)
+                return version, vulnerabilities, None
+        except Exception as e:
+            print(f"{Fore.YELLOW}[!] Last resort detection failed: {str(e)}")
+            pass
+            
         # For debugging purposes, include execution results in the error message
-        debug_info = " | ".join([str(r) for r in execution_results])
-        return None, [], f"{error_message} Results: {debug_info}"
+        debug_info = " | ".join([str(r) for r in execution_results if r])
+        if not debug_info:
+            debug_info = "All methods returned null or undefined"
+            
+        error_message = f"Version detection failed. {debug_info}"
+        return None, [], error_message
     
     except Exception as e:
         error_message = f"Error checking Swagger version: {str(e)}"
@@ -336,9 +460,13 @@ def check_swagger_version(url):
         return None, [], error_message
     finally:
         try:
-            driver.quit()
+            if driver:
+                driver.quit()
+                del driver  # Keep this from digger.py to free memory
         except:
             pass
+        # Keep gc.collect() for memory management
+        gc.collect()
 
 def generate_swagger_wordlist():
     """Generate a wordlist of common Swagger UI endpoints"""
@@ -387,33 +515,66 @@ def process_subdomains(subdomains_file, wordlist, output_file):
         print(f"{Fore.RED}[!] No subdomains found in {subdomains_file}")
         return
     
-    print(f"{Fore.GREEN}[+] {len(subdomains)} subdomains loaded from {subdomains_file}")
+    total_subdomains = len(subdomains)
+    print(f"{Fore.GREEN}[+] {total_subdomains} subdomains loaded from {subdomains_file}")
     
     # Initialize results
-    ferox_results = []
+    all_ferox_results = []
     
-    print(f"{Fore.CYAN}[*] Starting directory enumeration with {MAX_THREADS} concurrent threads")
-    with tqdm(total=len(subdomains), desc=f"{Fore.CYAN}Running directory enumeration", ncols=100, 
-              bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]") as progress_bar:
+    # Determine if we need batching based on subdomain count
+    use_batching = total_subdomains > 500
+    batch_size = MAX_BATCH_SIZE if use_batching else total_subdomains
+    total_batches = (total_subdomains + batch_size - 1) // batch_size
+    
+    if use_batching:
+        print(f"{Fore.CYAN}[*] Processing {total_subdomains} subdomains in {total_batches} batches of up to {batch_size} each")
+    
+    # Process subdomains in batches to manage resources better
+    for batch_num, i in enumerate(range(0, total_subdomains, batch_size)):
+        batch = subdomains[i:i+batch_size]
         
-        with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
-            # Submit all tasks
-            future_to_subdomain = {
-                executor.submit(process_subdomain, subdomain, wordlist, progress_bar): subdomain 
-                for subdomain in subdomains
-            }
+        if use_batching:
+            print(f"{Fore.CYAN}[*] Processing batch {batch_num+1}/{total_batches} ({len(batch)} subdomains)")
+        
+        # Run directory enumeration for this batch
+        print(f"{Fore.CYAN}[*] Starting directory enumeration with {MAX_THREADS} concurrent threads")
+        batch_desc = f"{Fore.CYAN}Running directory enumeration" + (f" (batch {batch_num+1}/{total_batches})" if use_batching else "")
+        
+        with tqdm(total=len(batch), desc=batch_desc, ncols=100, 
+                bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]") as progress_bar:
             
-            # Process results as they complete
-            for future in concurrent.futures.as_completed(future_to_subdomain):
-                subdomain = future_to_subdomain[future]
-                try:
-                    results = future.result()
-                    for result in results:
-                        url_match = re.search(r'(https?://[^\s]+)', result)
-                        if url_match:
-                            ferox_results.append(url_match.group(1))
-                except Exception as e:
-                    print(f"{Fore.RED}[!] Error processing {subdomain}: {e}")
+            batch_results = []
+            with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
+                # Submit all tasks
+                future_to_subdomain = {
+                    executor.submit(process_subdomain, subdomain, wordlist, progress_bar): subdomain 
+                    for subdomain in batch
+                }
+                
+                # Process results as they complete
+                for future in concurrent.futures.as_completed(future_to_subdomain):
+                    subdomain = future_to_subdomain[future]
+                    try:
+                        results = future.result()
+                        for result in results:
+                            url_match = re.search(r'(https?://[^\s]+)', result)
+                            if url_match:
+                                batch_results.append(url_match.group(1))
+                    except Exception as e:
+                        print(f"{Fore.RED}[!] Error processing {subdomain}: {e}")
+            
+            # Add batch results to overall results
+            all_ferox_results.extend(batch_results)
+            
+            # Brief pause between batches to free up resources
+            if i + batch_size < total_subdomains:
+                print(f"{Fore.CYAN}[*] Batch complete. Releasing resources before next batch...")
+                time.sleep(3)  # Allow time for resources to be freed
+                # Force garbage collection to free memory
+                gc.collect()
+    
+    # Update ferox_results with all collected results
+    ferox_results = all_ferox_results
     
     if not ferox_results:
         print(f"{Fore.YELLOW}[!] No directories found. Try using a different wordlist.")
@@ -421,19 +582,30 @@ def process_subdomains(subdomains_file, wordlist, output_file):
     
     print(f"{Fore.GREEN}[+] Found {len(ferox_results)} potential directories to scan")
     
-    # again feroxbuster with swagger wordlist on each result
-    scan_results = {}
+    # Apply similar batching approach to Swagger UI endpoint discovery
+    all_scan_results = {}
+    
+    # Determine batch size for ferox results
+    ferox_batch_size = min(50, MAX_BATCH_SIZE // 2)  # Smaller batches for second stage
+    total_ferox_batches = (len(ferox_results) + ferox_batch_size - 1) // ferox_batch_size
     
     print(f"{Fore.CYAN}[*] Starting Swagger UI endpoint discovery with {MAX_THREADS} concurrent threads")
-    with tqdm(total=len(ferox_results), desc=f"{Fore.CYAN}Finding Swagger UI endpoints", ncols=100, 
-              bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]") as progress_bar:
+    
+    for batch_num, i in enumerate(range(0, len(ferox_results), ferox_batch_size)):
+        batch = ferox_results[i:i+ferox_batch_size]
         
-        with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
-            # Submit tasks in batches to avoid resource exhaustion
-            batch_size = 20
-            for i in range(0, len(ferox_results), batch_size):
-                batch = ferox_results[i:i+batch_size]
-                
+        if total_ferox_batches > 1:
+            print(f"{Fore.CYAN}[*] Processing directory batch {batch_num+1}/{total_ferox_batches} ({len(batch)} directories)", end="")
+            sys.stdout.flush()
+            print()  # Single newline
+        
+        # This description shouldn't have any color codes since tqdm has issues with them
+        batch_desc = f"Finding Swagger UI endpoints" + (f" (batch {batch_num+1}/{total_ferox_batches})" if total_ferox_batches > 1 else "")
+        
+        with tqdm(total=len(batch), desc=batch_desc, ncols=100, 
+          bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]") as progress_bar:
+            
+            with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
                 # Submit batch of tasks
                 future_to_result = {
                     executor.submit(process_ferox_result, result, swagger_wordlist, progress_bar): result 
@@ -445,13 +617,21 @@ def process_subdomains(subdomains_file, wordlist, output_file):
                     result = future_to_result[future]
                     try:
                         results = future.result()
-                        scan_results.update(results)
+                        all_scan_results.update(results)
                     except Exception as e:
                         print(f"{Fore.RED}[!] Error processing {result}: {e}")
-                
-                # Add a small delay between batches to allow resources to be freed can bust anytime. not tested much
-                if i + batch_size < len(ferox_results):
-                    time.sleep(0.5)
+        
+        # Brief pause between batches to free up resources
+        if i + ferox_batch_size < len(ferox_results):
+            print(f"{Fore.CYAN}[*] Batch complete. Releasing resources before next batch...", end="")
+            sys.stdout.flush()
+            print()  # Single newline
+            time.sleep(1.5)  # Allow time for resources to be freed
+            # Force garbage collection to free memory
+            gc.collect()
+    
+    # Update scan_results with all collected results
+    scan_results = all_scan_results
     
     # Extract HTML endpoints 
     html_endpoints = extract_html_endpoints(scan_results)
@@ -462,7 +642,7 @@ def process_subdomains(subdomains_file, wordlist, output_file):
     
     print(f"{Fore.GREEN}[+] Found {len(html_endpoints)} potential Swagger UI endpoints")
     
-    # wagger UI version and vulnerabilities
+    # Swagger UI version and vulnerabilities
     stop_spinner = threading.Event()
     spinner_thread = threading.Thread(target=spinner_task, args=(stop_spinner,))
     spinner_thread.daemon = True
@@ -473,25 +653,35 @@ def process_subdomains(subdomains_file, wordlist, output_file):
     
     try:
         # Process endpoints sequentially to avoid browser driver issues
-        for endpoint in html_endpoints:
-            version, vulnerabilities, error = check_swagger_version(endpoint)
+        # This approach from api-digger.py is more reliable for detection
+        print(f"{Fore.CYAN}[*] Checking {len(html_endpoints)} potential Swagger UI endpoints for vulnerabilities")
+        
+        with tqdm(total=len(html_endpoints), desc="Checking Swagger UI versions", ncols=100,
+                  bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]") as progress_bar:
             
-            if error:
-                # Add to errored_endpoints if any error occurred during version checking
-                errored_endpoints.append({
-                    "URL": endpoint,
-                    "Error": error
-                })
-            elif version and vulnerabilities:
-                vulnerable_endpoints.append({
-                    "URL": endpoint,
-                    "Version": version,
-                    "Vulnerabilities": vulnerabilities
-                })
+            for endpoint in html_endpoints:
+                version, vulnerabilities, error = check_swagger_version(endpoint)
+                
+                if error:
+                    # Add to errored_endpoints if any error occurred during version checking
+                    errored_endpoints.append({
+                        "URL": endpoint,
+                        "Error": error
+                    })
+                elif version and vulnerabilities:
+                    vulnerable_endpoints.append({
+                        "URL": endpoint,
+                        "Version": version,
+                        "Vulnerabilities": vulnerabilities
+                    })
+                
+                # Update progress bar
+                progress_bar.update(1)
     finally:
         stop_spinner.set()
         spinner_thread.join()
     
+    # Rest of the function remains the same...
     # Save results to file
     with open(output_file, 'w') as f:
         f.write(f"API-DIGGER SCAN RESULTS\n")
@@ -588,6 +778,21 @@ def main():
     
     # Display the vulnerability table
     display_vulnerability_table()
+    
+    # Existing code...
+    
+    # Add batch size configuration option
+    global MAX_BATCH_SIZE
+    batch_size_input = input(f"{Fore.GREEN}[?] Enter batch size for large subdomain lists (default: {MAX_BATCH_SIZE}): {Style.RESET_ALL}").strip()
+    if batch_size_input:
+        try:
+            batch_size = int(batch_size_input)
+            if (batch_size > 0):
+                MAX_BATCH_SIZE = batch_size
+            else:
+                print(f"{Fore.YELLOW}[!] Invalid batch size, using default: {MAX_BATCH_SIZE}")
+        except ValueError:
+            print(f"{Fore.YELLOW}[!] Invalid input, using default batch size: {MAX_BATCH_SIZE}")
     
     # Get user input
     subdomains_file = input(f"{Fore.GREEN}[?] Enter the name of the subdomains file: {Style.RESET_ALL}")
