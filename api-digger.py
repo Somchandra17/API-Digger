@@ -398,7 +398,7 @@ def check_swagger_version(url):
                 
                 # Regular version pattern detection - using the simpler approach from api-digger.py
                 version_match = re.search(r'(\d+\.\d+\.\d+)', result)
-                if version_match:
+                if (version_match):
                     version = version_match.group(1)
                     print(f"{Fore.GREEN}[+] Detected Swagger UI version {version} via script execution")
                     break
@@ -591,44 +591,42 @@ def process_subdomains(subdomains_file, wordlist, output_file):
     
     print(f"{Fore.CYAN}[*] Starting Swagger UI endpoint discovery with {MAX_THREADS} concurrent threads")
     
-    for batch_num, i in enumerate(range(0, len(ferox_results), ferox_batch_size)):
-        batch = ferox_results[i:i+ferox_batch_size]
+    # Add a summary progress bar for overall batch progress
+    with tqdm(total=len(ferox_results), desc="Overall Progress", ncols=100,
+              bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]") as overall_progress:
         
-        if total_ferox_batches > 1:
-            print(f"{Fore.CYAN}[*] Processing directory batch {batch_num+1}/{total_ferox_batches} ({len(batch)} directories)", end="")
-            sys.stdout.flush()
-            print()  # Single newline
-        
-        # This description shouldn't have any color codes since tqdm has issues with them
-        batch_desc = f"Finding Swagger UI endpoints" + (f" (batch {batch_num+1}/{total_ferox_batches})" if total_ferox_batches > 1 else "")
-        
-        with tqdm(total=len(batch), desc=batch_desc, ncols=100, 
-          bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]") as progress_bar:
+        # Process in batches
+        for batch_num, i in enumerate(range(0, len(ferox_results), ferox_batch_size)):
+            batch = ferox_results[i:i+ferox_batch_size]
             
+            # Only print batch info if verbose mode is enabled (could add a flag for this)
+            # print(f"{Fore.CYAN}[*] Processing directory batch {batch_num+1}/{total_ferox_batches} ({len(batch)} directories)")
+            
+            batch_desc = f"Batch {batch_num+1}/{total_ferox_batches}"
+            
+            # Process this batch
             with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
                 # Submit batch of tasks
-                future_to_result = {
-                    executor.submit(process_ferox_result, result, swagger_wordlist, progress_bar): result 
-                    for result in batch
-                }
+                futures = []
+                for result in batch:
+                    future = executor.submit(process_ferox_result, result, swagger_wordlist, None)
+                    futures.append(future)
                 
                 # Process results as they complete
-                for future in concurrent.futures.as_completed(future_to_result):
-                    result = future_to_result[future]
+                for future in concurrent.futures.as_completed(futures):
                     try:
                         results = future.result()
                         all_scan_results.update(results)
+                        # Update the overall progress
+                        overall_progress.update(1)
                     except Exception as e:
-                        print(f"{Fore.RED}[!] Error processing {result}: {e}")
-        
-        # Brief pause between batches to free up resources
-        if i + ferox_batch_size < len(ferox_results):
-            print(f"{Fore.CYAN}[*] Batch complete. Releasing resources before next batch...", end="")
-            sys.stdout.flush()
-            print()  # Single newline
-            time.sleep(1.5)  # Allow time for resources to be freed
-            # Force garbage collection to free memory
-            gc.collect()
+                        # Silently handle errors to avoid cluttering output
+                        pass
+            
+            # Brief pause between batches to free up resources, but don't print a message
+            if i + ferox_batch_size < len(ferox_results):
+                time.sleep(1.5)  # Allow time for resources to be freed
+                gc.collect()
     
     # Update scan_results with all collected results
     scan_results = all_scan_results
