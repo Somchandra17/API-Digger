@@ -1,6 +1,6 @@
 # API-Digger
 
-![API-Digger Logo](https://img.shields.io/badge/API--Digger-v2.1-blue)
+![API-Digger Logo](https://img.shields.io/badge/API--Digger-v3-blue)
 ![Python](https://img.shields.io/badge/Python-3.7+-brightgreen)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
