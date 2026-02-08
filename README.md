@@ -6,7 +6,7 @@
 
 API-Digger is an automated Swagger UI vulnerability scanner that identifies exposed and potentially vulnerable API documentation endpoints.
 
-## 🚀 Features
+## Features
 
 - **Endpoint Discovery**: Automatically scans subdomains to identify potential Swagger UI endpoints
 - **Version Detection**: Uses headless browser automation to detect Swagger UI versions
@@ -14,13 +14,13 @@ API-Digger is an automated Swagger UI vulnerability scanner that identifies expo
 - **Detailed Reporting**: Generates comprehensive reports of vulnerable endpoints
 - **Concurrent Processing**: Multi-threaded architecture for faster scanning
 
-## 📋 Prerequisites
+## Prerequisites
 
 - Python 3.7+
 - Feroxbuster (for directory enumeration)
 - Chrome/Chromium (for headless browser automation)
 
-## 🔧 Installation
+## Installation
 
 1. Clone the repository
 ```bash
@@ -67,7 +67,7 @@ The script will prompt you for:
 [?] Enter the output file name: scan_results.txt
 ```
 
-## 📊 Vulnerability Table
+## Vulnerability Table
 
 API-Digger checks for the following known Swagger UI vulnerabilities:
 
@@ -81,7 +81,7 @@ API-Digger checks for the following known Swagger UI vulnerabilities:
 | Critical | Cross-site Scripting (XSS) | <2.1.0 |
 | High     | Cross-site Scripting (XSS) | <2.2.1 |
 
-## 📝 Output
+## Output
 
 The tool generates a detailed report containing:
 - Scan summary with statistics
@@ -89,16 +89,16 @@ The tool generates a detailed report containing:
 - Details of vulnerable endpoints with version information
 - List of endpoints that encountered errors during scanning
 
-## 💡 Tips
+## Tips
 
 - For optimal performance, adjust thread count based on your system capabilities
 - Use a comprehensive subdomain list for better coverage
 - Consider using custom wordlists for specialized environments
 
-## 📜 License
+## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
 
-## ⚠️ Disclaimer
+## Disclaimer
 
 This tool is designed for security professionals to identify vulnerable Swagger UI instances in their own environments. Always obtain proper authorization before scanning any systems you don't own.
